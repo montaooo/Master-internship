@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+venv/
+
+appunti/
+normal/
+malicious/
+tesseract/
+
+note giornaliere.md
