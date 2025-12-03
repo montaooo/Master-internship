@@ -131,14 +131,10 @@ def print_metrics(metrics):
     print(m.to_markdown(numalign="center", stralign="center"))
     print()
 
-# starting_date = pd.to_datetime("2013-12-01")
-cutoff_date = pd.to_datetime("2017-07-01")
 malware_list = ["trickbot", "dridex", "wannacry", "artemis"]
 test_size = 0.3
-# threshold = 0.5
 filter_malicious = 1
 filter_normal = 1
-# filter_background = 0.8
 
 normal_list = [
     # FlowFile("2013", "12", "17", "normal", "1"),
@@ -258,13 +254,10 @@ all_dsets['Date'] = pd.to_datetime(all_dsets['Date'])
 # print(all_dsets.isna().any().any())
 # print(all_dsets.columns[all_dsets.isna().any()])
 
-# past_dset = all_dsets[all_dsets['Date'] <= cutoff_date]
-# future_dset = all_dsets[all_dsets['Date'] > cutoff_date]
-
 # -------------------- TRAINING --------------------
 
 with open("performances/tmp.txt", "w") as f:
-    f.write("")
+    f.write("START\n\n")
 
 all_results = []
 for i in range(1,6):
@@ -272,6 +265,7 @@ for i in range(1,6):
     results_standard = rf_cl(all_dsets, test_size)
     print_metrics(results_standard)
     all_results.append(results_standard)
+    exit()
   
 mean_results = {}
 metrics = ["Precision", "F1", "TPR", "TNR"]
@@ -281,13 +275,6 @@ for m in metrics:
     mean_results[m] = np.mean(values, axis=0).tolist()
 
 print(f"Valori medi: {mean_results}")
-# -------------------- DOWNSAMPLING --------------------
-# print("DOWNSAMPLING")
-# results_downsample = rf_downsampling(past_dset, future_dset, test_size)
-
-# -------------------- OVERSAMPLING --------------------
-# print("OVERSAMPLING")
-# results_oversample = rf_oversampling(past_dset, future_dset, test_size)
 
 # -------------------- GRAFICI --------------------
 pendleblue="#1F8FFF"
@@ -312,14 +299,7 @@ ax1.set_title("ALL BOTNETS")
 # ax2.plot(results_downsample['F1'], marker='o', color=pendleblue)
 # ax2.legend(['Precision', 'Recall', 'F1'])
 # ax2.grid(axis = 'y')
-# ax2.set_title('DOWNSAMPLING')
-
-# ax3.plot(results_oversample['Precision'], marker='o', color=pendleyellow)
-# ax3.plot(results_oversample['Recall'], marker='o', color='red')
-# ax3.plot(results_oversample['F1'], marker='o', color=pendleblue)
-# ax3.legend(['Precision', 'Recall', 'F1'])
-# ax3.grid(axis='y')
-# ax3.set_title('OVERSAMPLING')
+# ax2.set_title('')
 
 plt.tight_layout()
 
