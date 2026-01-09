@@ -4,22 +4,37 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 import numpy as np
 import datetime, time
-from math import floor
+from math import floor, isnan
 
 from tesseract import temporal, spatial
 
-def best_K_data(clf: RandomForestClassifier, X_test: pd.DataFrame, y_test: pd.DataFrame, K: int):
+def best_K_data(clf: RandomForestClassifier, X_test: pd.DataFrame, y_test: pd.DataFrame, botnet: str):
     '''
     Funzione per ottenere i K dati più significativi del dataset testato. Vengono scelti i K più vicini al decision boundary.
     '''
-    # K = y_test.shape[0] // 2
-    probs = clf.predict_proba(X_test)
-    max_probs = np.max(probs, axis=1)
-    indexes = np.argsort(max_probs)[:K]
+    
+    if botnet == "all":
+        probs = clf.predict_proba(X_test)
+        max_probs = np.max(probs, axis=1)
+        
+        idx_neg = np.where(y_test == 0)[0]
+        idx_pos = np.where(y_test == 1)[0]
+        k_neg = y_test[idx_neg].shape[0] // 2
+        k_pos = y_test[idx_pos].shape[0] // 2
+
+        neg_indexes = np.argsort(max_probs[idx_neg])[:k_neg]
+        pos_indexes = np.argsort(max_probs[idx_pos])[:k_pos]
+        indexes = np.concatenate([neg_indexes, pos_indexes])
+    elif botnet == "single":
+        K = y_test.shape[0] // 2
+        indexes = np.argsort(max_probs)[:K]
 
     return X_test[indexes], y_test[indexes]
 
 def decimal_floor(n: float, decimals: int):
+
+    if n is None or isnan(n):
+        return n
     n *= (10**decimals)
     n = floor(n)
     n /= (10**decimals)
@@ -177,23 +192,55 @@ def ensemble_predict_weighted(ensemble, X: pd.DataFrame, weights):
 
     return final_preds, all_probs, final_probs
 
-def calculate_weights(y_test: pd.DataFrame, all_probs):
+def calculate_weights(y_test: pd.DataFrame, all_probs, botnet: str):
     weights = []
     for prob in all_probs:
         pred = np.argmax(prob, axis=1)
         tn, fp, fn, tp = confusion_matrix(y_test, pred, labels=[0,1]).ravel().tolist()
-        tpr = round(tp / (tp + fn), 3)
-        weights.append(tpr)
+        if tp + fn == 0:
+            tpr = 1
+        else:
+            tpr = tp / (tp + fn)
+
+        if botnet == "all":
+            if tn + fp == 0:
+                tnr = 1
+            else:
+                tnr = tn / (tn + fp)
+            weights.append(decimal_floor(np.sqrt(tpr * tnr), 3))
+        else:
+            weights.append(decimal_floor(tpr, 3))
     
     return weights
+
+def update_buffer(buffer_X, buffer_y, new_X, new_y, size: int):
+    if buffer_X is None:
+        return new_X, new_y
+    
+    X_combined = np.vstack((buffer_X, new_X))
+    y_combined = np.concatenate((buffer_y, new_y))
+
+    idx_neg = np.where(y_combined == 0)[0]
+    idx_pos = np.where(y_combined == 1)[0]
+    
+    half = size // 2
+
+    selected_neg = np.random.choice(idx_neg, min(len(idx_neg), half), replace=False)
+    selected_pos = np.random.choice(idx_pos, min(len(idx_pos), half), replace=False)
+
+    indexes = np.concatenate([selected_neg, selected_pos])
+    
+    return X_combined[indexes], y_combined[indexes]
 
 def prova(dset: pd.DataFrame, test_size, botnet: str):
     results = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
     t = pd.to_datetime(dset['Date'])
     y = dset['Label'].values
     X = dset.drop(columns=['Date', 'Label']).values
-    fixed_start_date = pd.to_datetime("2017-04-08")
-    train_size = 1
+    fixed_start_date = pd.to_datetime("2016-09-01")
+    train_size = 2
+    ensemble_models = []
+    weights = []
 
     splits = temporal.time_aware_train_test_split(X, y, t, train_size=train_size, test_size=1, granularity="month", start_date=fixed_start_date)
     X_train, X_tests, y_train, y_tests, t_train, t_tests = splits
@@ -210,20 +257,115 @@ def prova(dset: pd.DataFrame, test_size, botnet: str):
     X_train_past, X_test_past, y_train_past, y_test_past = train_test_split(X_train, y_train, test_size=test_size, random_state=42, stratify=y_train)
 
     clf.fit(X_train_past, y_train_past)
-    pred = clf.predict(X_test_past)
+    ensemble_models.append(clf)
+    weights.append(1)
+    pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test_past, weights)
+    t_train = pd.Series(t_train)
+    results['Date'].append(f"{t_train.iloc[-1].month}-{t_train.iloc[-1].year}")
     calculate_metrics(y_test_past, pred, results, botnet)
 
+    max_probs = np.max(avg_probs, axis=1)
+    idx_neg_full = np.where(y_test_past == 0)[0]
+    idx_pos_full = np.where(y_test_past == 1)[0]
+    k_neg = len(idx_neg_full) // 2
+    k_pos = len(idx_pos_full) // 2
+    neg_indexes = idx_neg_full[np.argsort(max_probs[idx_neg_full])[:k_neg]]
+    pos_indexes = idx_pos_full[np.argsort(max_probs[idx_pos_full])[:k_pos]]
+
+    buffer_X_neg = X_test_past[neg_indexes]
+    buffer_y_neg = y_test_past[neg_indexes]
+    buffer_X_pos = X_test_past[pos_indexes]
+    buffer_y_pos = y_test_past[pos_indexes]
+    
+    # -------------------- CONTINUAL LEARNING --------------------
     print("Start Testing")
 
-    for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests)):
-        
-        
-        # print(t_test)
-        pred = clf.predict(X_test)
-        calculate_metrics(y_test, pred, results, botnet)
     
+    starttime = time.time()
+    f = open("performances/tmp.txt", "a")
+    print(f"Start time: {datetime.datetime.now().time()}", file=f)
+
+    for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
+        t_test: pd.Series
+        print(f"Cycle {i}")
+        unlearning = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
+
+        pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test, weights)
+        max_probs = np.max(avg_probs, axis=1)
+        K = y_test.shape[0] // 2
+        indexes = np.argsort(max_probs)[:K]
+        
+        X_new_ensemble = X_test[indexes]
+        y_new_ensemble = y_test[indexes]
+
+        # Controllo se nel periodo corrente sono presenti entrambe le classi (0,1)
+        classes_found = np.unique(y_new_ensemble)
+        if len(classes_found) == 1:
+            missing_class = 1 if 0 in classes_found else 0
+            if missing_class == 1:
+                X_new_ensemble = np.vstack([X_new_ensemble, buffer_X_pos])
+                y_new_ensemble = np.concatenate([y_new_ensemble, buffer_y_pos])
+            else:
+                X_new_ensemble = np.vstack([X_new_ensemble, buffer_X_neg])
+                y_new_ensemble = np.concatenate([y_new_ensemble, buffer_y_neg])
+
+        # Aggiornamento del buffer coi dati passati
+        idx_neg_new = np.where(y_test == 0)[0]
+        idx_pos_new = np.where(y_test == 1)[0]
+
+        if len(idx_neg_new) > 0:
+            k = len(idx_neg_new) // 2
+            n_idx = idx_neg_new[np.argsort(max_probs[idx_neg_new])[:k]]
+            buffer_X_neg, buffer_y_neg = X_test[n_idx], y_test[n_idx]
+        if len(idx_pos_new) > 0:
+            k = len(idx_pos_new) // 2
+            n_idx = idx_pos_new[np.argsort(max_probs[idx_pos_new])[:k]]
+            buffer_X_pos, buffer_y_pos = X_test[n_idx], y_test[n_idx]
+
+        weights = calculate_weights(y_test, all_probs, botnet)
+
+        # -------------------- MACHINE UNLEARNING --------------------
+
+        if len(ensemble_models) > 5:
+            if i != 1:
+                total_tpr = results['TPR'][-1]
+                total_tnr = results['TNR'][-1]
+                total_f1 = results['F1'][-1]
+
+                total_tpr = 0 if type(total_tpr) == str else total_tpr
+                total_tnr = 0 if type(total_tnr) == str else total_tnr
+                total_f1 = 0 if type(total_f1) == str else total_f1
+
+                for j in range(len(ensemble_models)):
+                    models_left = ensemble_models[:j] + ensemble_models[j+1:]
+                    weights_lef = weights[:j] + weights[j+1:]
+                    pred, all_probs, avg_probs = ensemble_predict_weighted(models_left, X_test, weights_lef)
+                    calculate_metrics(y_test, pred, unlearning, botnet)
+                
+                bonus = 0.01
+                unlearning = {k: [1 if x == '/' else x for x in v] for k, v in unlearning.items()}
+                unlearning['F1'] = [el + bonus for el in unlearning['F1']]
+                unlearning['TNR'] = [el + bonus for el in unlearning['TNR']]
+                unlearning['TPR'] = [el + bonus for el in unlearning['TPR']]
+
+                max_index = unlearning['F1'].index(max(unlearning['F1']))
+                
+                if unlearning['F1'][max_index] >= total_f1 and unlearning['TNR'][max_index] >= total_tnr and unlearning['TPR'][max_index] >= total_tpr:
+                    del ensemble_models[max_index]
+                    del weights[max_index]
+                    print(f"Rimozione modello {max_index}")
+
+        weights.append(1)
+
+        results['Date'].append(f"{t_test.iloc[0].month}-{t_test.iloc[0].year}")
+        # pred = clf.predict(X_test)
+        calculate_metrics(y_test, pred, results, botnet)
+
+        ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        # print(f"Numero modelli: {len(ensemble_models)}")
+        # print(f"Numero di pesi: {len(weights)}")
     print(results)
-    exit()
+    return results
 
 def rf_cl(dset: pd.DataFrame, test_size, botnet: str):
     results = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
@@ -262,8 +404,8 @@ def rf_cl(dset: pd.DataFrame, test_size, botnet: str):
     pred = clf.predict(X_test_past)
     calculate_metrics(y_test_past, pred, results, botnet)
 
-    K = y_train.shape[0] // 2
-    X_train_sliding, y_train_sliding = best_K_data(clf, X_train, y_train, K)
+    # K = y_train.shape[0] // 2
+    X_train_sliding, y_train_sliding = best_K_data(clf, X_train, y_train, botnet)
 
     # -------------------- CONTINUAL LEARNING --------------------    
     starttime = time.time()
@@ -278,8 +420,8 @@ def rf_cl(dset: pd.DataFrame, test_size, botnet: str):
         # print(check_importances(clf, X_columns))
         calculate_metrics(y_test, pred, results, botnet)
         
-        K = y_test.shape[0] // 2
-        X_retraining, y_retraining = best_K_data(clf, x_test, y_test, K)
+        # K = y_test.shape[0] // 2
+        X_retraining, y_retraining = best_K_data(clf, x_test, y_test, botnet)
         X_train_sliding = np.vstack((X_train_sliding, X_retraining))
         y_train_sliding = np.concatenate((y_train_sliding, y_retraining))
 
@@ -296,9 +438,10 @@ def ensemble_cl(dset: pd.DataFrame, test_size, botnet: str):
     y = dset['Label'].values
     X = dset.drop(columns=['Date', 'Label']).values
     X_columns = dset.drop(columns=['Date', 'Label']).columns
-    fixed_start_date = pd.to_datetime("2016-09-15")
-    train_size = 10
+    fixed_start_date = pd.to_datetime("2016-09-08")
+    train_size = 8
     ensemble_models = []
+    weights = []
 
     splits = temporal.time_aware_train_test_split(X, y, t, train_size=train_size, test_size=1, granularity="month", start_date=fixed_start_date)
     
@@ -320,12 +463,25 @@ def ensemble_cl(dset: pd.DataFrame, test_size, botnet: str):
 
     clf.fit(X_train_past, y_train_past)
     ensemble_models.append(clf)
+    weights.append(1)
     pred = clf.predict(X_test_past)
     calculate_metrics(y_test_past, pred, results, botnet)
 
-    mask_neg = (y_train == 0)
-    K = np.sum(y_train == 0) // 2
-    X_neg, y_neg = best_K_data(clf, X_train[mask_neg], y_train[mask_neg], K)
+    
+
+    # all_probs = clf.predict_proba(X_test_past)
+    # max_probs = np.max(all_probs, axis=1)
+    # K = 2000
+    # indexes = np.argsort(max_probs)[:K]
+
+    # buffer_X = X_test_past[indexes]
+    # buffer_y = y_test_past[indexes]
+
+
+    if botnet == "single":
+        mask_neg = (y_train == 0)
+        # K = np.sum(y_train == 0) // 2
+        X_neg, y_neg = best_K_data(clf, X_train[mask_neg], y_train[mask_neg], botnet)
     
     # -------------------- CONTINUAL LEARNING --------------------
 
@@ -333,20 +489,36 @@ def ensemble_cl(dset: pd.DataFrame, test_size, botnet: str):
     f = open("performances/tmp.txt", "a")
     print(f"Start time: {datetime.datetime.now().time()}", file=f)
 
-    weights = []
+    
     for i, (x_test, y_test) in enumerate(zip(X_optimized_tests, y_optimized_tests), 1):
         unlearning = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
         print(f"Cycle {i}")
-        weights.append(1)
         pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, x_test, weights)
         # print(check_importances(clf, X_columns))
         calculate_metrics(y_test, pred, results, botnet)
-        
+
+        # Preparazione dati (nuovi + buffer) per nuovo modello dell'ensemble
         max_probs = np.max(avg_probs, axis=1)
         K = y_test.shape[0] // 2
         indexes = np.argsort(max_probs)[:K]
 
-        weights = calculate_weights(y_test, all_probs)
+        X_new_ensemble = x_test[indexes]
+        y_new_ensemble = y_test[indexes]
+        
+        # idx_neg = np.where(y_test == 0)[0]
+        # idx_pos = np.where(y_test == 1)[0]
+        # sel_neg = idx_neg[np.argsort(max_probs[idx_neg])[:1000]]
+        # sel_pos = idx_pos[np.argsort(max_probs[idx_pos])[:1000]]
+        # idx_buffer = np.concatenate([sel_neg, sel_pos])
+        # new_X_buffer = x_test[idx_buffer]
+        # new_y_buffer = y_test[idx_buffer]
+        
+        
+        # X_train_mix = np.vstack((X_new_ensemble, buffer_X))
+        # y_train_mix = np.concatenate((y_new_ensemble, buffer_y))
+        # buffer_X, buffer_y = update_buffer(buffer_X, buffer_y, new_X_buffer, new_y_buffer, size=2000)
+
+        weights = calculate_weights(y_test, all_probs, botnet)
 
         # -------------------- MACHINE UNLEARNING --------------------
         if botnet == "all":
@@ -359,13 +531,20 @@ def ensemble_cl(dset: pd.DataFrame, test_size, botnet: str):
                     weights_lef = weights[:j] + weights[j+1:]
                     pred, all_probs, avg_probs = ensemble_predict_weighted(models_left, x_test, weights_lef)
                     calculate_metrics(y_test, pred, unlearning, botnet)
+                
+                unlearning['F1'] = [el + (0.03 * (len(unlearning['F1']) - unlearning['F1'].index(el))) for el in unlearning['F1']]
+                unlearning['TNR'] = [el + (0.03 * (len(unlearning['TNR']) - unlearning['TNR'].index(el))) for el in unlearning['TNR']]
+                unlearning['TPR'] = [el + (0.03 * (len(unlearning['TPR']) - unlearning['TPR'].index(el))) for el in unlearning['TPR']]
+
                 max_index = unlearning['F1'].index(max(unlearning['F1']))
                 
-                if unlearning['F1'][max_index] >= total_f1 - 0.05 and unlearning['TNR'][max_index] >= total_tnr - 0.05 and unlearning['TPR'][max_index] >= total_tpr - 0.05:
+                if unlearning['F1'][max_index] >= total_f1 and unlearning['TNR'][max_index] >= total_tnr and unlearning['TPR'][max_index] >= total_tpr:
                     del ensemble_models[max_index]
                     del weights[max_index]
+                    print(f"Rimozione modello {max_index}")
             
-            ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(x_test[indexes], y_test[indexes]))
+            ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+
         elif botnet == "single":
             if i != 1:
                 total_tpr = results['TPR'][-1]

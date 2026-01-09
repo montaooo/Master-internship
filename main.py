@@ -87,6 +87,25 @@ def fixIPs(addr):
             return 1
     return 0
 
+def optimize_types(dset: pd.DataFrame):
+    floats = dset.select_dtypes(include=['float']).columns
+    dset[floats] = dset[floats].astype('float32')
+    
+    ints = dset.select_dtypes(include=['int64', 'int']).columns
+    for col in ints:
+        mn = dset[col].min()
+        mx = dset[col].max()
+        
+        if mn >= 0:
+            if mx < 255:
+                dset[col] = dset[col].astype(np.uint8)
+            if mx < 65535:
+                dset[col] = dset[col].astype(np.uint16)
+            else:
+                dset[col] = dset[col].astype(np.uint32)
+        else:
+            dset[col] = dset[col].astype(np.int8)
+
 def preprocess(dset: pd.DataFrame, filter, flow_file: FlowFile, test_size):
     # Riduzione del numero di righe
     dset['seed'] = (np.random.uniform(0,1,len(dset)))
@@ -110,6 +129,8 @@ def preprocess(dset: pd.DataFrame, filter, flow_file: FlowFile, test_size):
     dset.loc[:, "SrcPrivateIP"] = dset["SrcAddr"].apply(fixIPs)
     dset.loc[:, "DstPrivateIP"] = dset["DstAddr"].apply(fixIPs)
     dset.drop(columns=["SrcAddr", "DstAddr"], inplace=True)
+
+    optimize_types(dset)
     return dset
 
 def handleCategorical(dset: pd.DataFrame):
@@ -131,9 +152,9 @@ def print_metrics(metrics):
     print(m.to_markdown(numalign="center", stralign="center"))
     print()
 
-malware_list = ["trickbot", "dridex", "wannacry", "artemis"]
+malware_list = ["trickbot", "dridex", "wannacry", "artemis", "other"]
 test_size = 0.3
-filter_malicious = 1
+filter_malicious = 0.5
 filter_normal = 1
 
 normal_list = [
@@ -143,7 +164,7 @@ normal_list = [
     FlowFile("2016", "09", "13", "normal", "4"),
     FlowFile("2017", "07", "03", "normal", "5"),
     FlowFile("2017", "07", "23", "normal", "6"),
-    # FlowFile("2017", "09", "05", "normal", "7"),
+    FlowFile("2017", "09", "05", "normal", "7"),
     FlowFile("2017", "04", "30", "normal", "8"),
     FlowFile("2017", "05", "02", "normal", "9"),
     FlowFile("2017", "05", "08", "normal", "10"),
@@ -158,43 +179,58 @@ normal_list = [
     FlowFile("2017", "05", "01", "normal", "19"),
     # # FlowFile("2013", "12", "17", "normal", "20"),
     FlowFile("2017", "05", "02", "normal", "21"),
-    # FlowFile("2018", "05", "07", "normal", "22")
+    FlowFile("2018", "04", "07", "normal", "22")
 ]
 
 malicious_list = [
-    # # FlowFile("2017", "3", "30", "trickbot", "1"),  
-    # # FlowFile("2017", "3", "30", "trickbot", "2"),  
-    # # FlowFile("2017", "3", "29", "trickbot", "3"),  
-    # # FlowFile("2017", "3", "30", "trickbot", "4"),  
-    # # FlowFile("2017", "3", "30", "trickbot", "5"),  
-    # FlowFile("2017", "04", "12", "trickbot", "6"),  
-    # FlowFile("2017", "04", "12", "trickbot", "7"),  
-    # FlowFile("2017", "04", "17", "trickbot", "8"),  
-    # FlowFile("2017", "05", "15", "trickbot", "9"),  
-    # FlowFile("2017", "06", "07", "trickbot", "10"), 
-    # FlowFile("2017", "06", "24", "trickbot", "11"), 
-    # FlowFile("2017", "06", "24", "trickbot", "12"), 
-    # FlowFile("2017", "06", "24", "trickbot", "13"), 
-    # FlowFile("2017", "06", "24", "trickbot", "14"), 
-    # # FlowFile("2018", "01", "30", "trickbot", "15"), 
-    # # FlowFile("2018", "01", "30", "trickbot", "16"), 
-    # # FlowFile("2021", "07", "30", "trickbot", "17"),
-    # # FlowFile("2018", "03", "27", "trickbot", "18"),   
+    FlowFile("2016", "10", "13", "other", "1"),
+    FlowFile("2016", "11", "4", "other", "2"),
+    FlowFile("2016", "11", "8", "other", "3"),
+    FlowFile("2016", "11", "17", "other", "4"),
+    FlowFile("2016", "12", "05", "other", "5"),
+    FlowFile("2016", "12", "22", "other", "6"),
+    FlowFile("2017", "01", "24", "other", "7"),
+    FlowFile("2017", "09", "10", "other", "8"),
+    FlowFile("2017", "10", "22", "other", "9"),
+    FlowFile("2017", "11", "10", "other", "10"),
+    FlowFile("2017", "12", "29", "other", "11"),
+    FlowFile("2018", "02", "02", "other", "12"),
+    FlowFile("2018", "02", "16", "other", "13"),
+    FlowFile("2018", "03", "20", "other", "14"),
 
-    # # FlowFile("2015", "03", "12", "dridex", "1"),
-    # # FlowFile("2016", "02", "12", "dridex", "2"),
-    # # FlowFile("2017", "02", "27", "dridex", "4"),
-    # # FlowFile("2017", "02", "27", "dridex", "5"),
-    # FlowFile("2017", "04", "17", "dridex", "6"),
-    # FlowFile("2017", "04", "18", "dridex", "7"),
-    # FlowFile("2017", "04", "18", "dridex", "8"),
-    # FlowFile("2017", "05", "15", "dridex", "10"),
-    # FlowFile("2017", "05", "16", "dridex", "9"),
-    # FlowFile("2017", "06", "24", "dridex", "12"),
-    # FlowFile("2017", "05", "15", "dridex", "11"),
-    # # FlowFile("2018", "01", "29", "dridex", "13"),
-    # # FlowFile("2018", "01", "30", "dridex", "14"),
-    # FlowFile("2018", "04", "13", "dridex", "15"),
+    FlowFile("2017", "3", "30", "trickbot", "1"),  
+    FlowFile("2017", "3", "30", "trickbot", "2"),  
+    FlowFile("2017", "3", "29", "trickbot", "3"),  
+    FlowFile("2017", "3", "30", "trickbot", "4"),  
+    FlowFile("2017", "3", "30", "trickbot", "5"),  
+    FlowFile("2017", "04", "12", "trickbot", "6"),  
+    FlowFile("2017", "04", "12", "trickbot", "7"),  
+    FlowFile("2017", "04", "17", "trickbot", "8"),  
+    FlowFile("2017", "05", "15", "trickbot", "9"),  
+    FlowFile("2017", "06", "07", "trickbot", "10"), 
+    FlowFile("2017", "06", "24", "trickbot", "11"), 
+    FlowFile("2017", "06", "24", "trickbot", "12"), 
+    FlowFile("2017", "06", "24", "trickbot", "13"), 
+    FlowFile("2017", "06", "24", "trickbot", "14"), 
+    FlowFile("2018", "01", "30", "trickbot", "15"), 
+    FlowFile("2018", "01", "30", "trickbot", "16"), 
+    # FlowFile("2021", "07", "30", "trickbot", "17"),
+    FlowFile("2018", "03", "27", "trickbot", "18"),
+
+    # FlowFile("2015", "03", "12", "dridex", "1"),
+    # FlowFile("2016", "02", "12", "dridex", "2"),
+    FlowFile("2017", "02", "27", "dridex", "4"),
+    FlowFile("2017", "02", "27", "dridex", "5"),
+    FlowFile("2017", "04", "17", "dridex", "6"),
+    FlowFile("2017", "04", "18", "dridex", "7"),
+    FlowFile("2017", "04", "18", "dridex", "8"),
+    FlowFile("2017", "05", "15", "dridex", "10"),
+    FlowFile("2017", "05", "16", "dridex", "9"),
+    FlowFile("2017", "06", "24", "dridex", "12"),
+    FlowFile("2017", "05", "15", "dridex", "11"),
+    FlowFile("2018", "01", "29", "dridex", "13"),
+    FlowFile("2018", "01", "30", "dridex", "14"),
+    FlowFile("2018", "04", "13", "dridex", "15"),
 
     FlowFile("2017", "06", "24", "artemis", "1"),
     FlowFile("2017", "08", "14", "artemis", "2"),
@@ -202,21 +238,23 @@ malicious_list = [
     FlowFile("2017", "08", "15", "artemis", "4"),
     FlowFile("2017", "08", "16", "artemis", "5"),
 
-    # FlowFile("2017", "05", "14", "wannacry", "1"),
-    # FlowFile("2017", "05", "14", "wannacry", "2"),
-    # FlowFile("2017", "05", "15", "wannacry", "3"),
-    # FlowFile("2017", "05", "15", "wannacry", "4"),
-    # FlowFile("2017", "05", "16", "wannacry", "5"),
-    # FlowFile("2017", "06", "24", "wannacry", "6"),
-    # FlowFile("2017", "07", "11", "wannacry", "7"),
-    # FlowFile("2017", "07", "11", "wannacry", "8"),
-    # FlowFile("2017", "07", "11", "wannacry", "9"),
-    # FlowFile("2017", "07", "22", "wannacry", "10"),
-    # FlowFile("2017", "07", "11", "wannacry", "11"),
-    # FlowFile("2017", "07", "13", "wannacry", "12"),
-    # FlowFile("2017", "07", "11", "wannacry", "13"),
-    # FlowFile("2017", "07", "13", "wannacry", "14"),
-    # FlowFile("2017", "07", "13", "wannacry", "15")
+    FlowFile("2017", "05", "14", "wannacry", "1"),
+    FlowFile("2017", "05", "14", "wannacry", "2"),
+    FlowFile("2017", "05", "15", "wannacry", "3"),
+    FlowFile("2017", "05", "15", "wannacry", "4"),
+    FlowFile("2017", "05", "16", "wannacry", "5"),
+    FlowFile("2017", "06", "24", "wannacry", "6"),
+    FlowFile("2017", "07", "11", "wannacry", "7"),
+    FlowFile("2017", "07", "11", "wannacry", "8"),
+    FlowFile("2017", "07", "11", "wannacry", "9"),
+    FlowFile("2017", "07", "22", "wannacry", "10"),
+    FlowFile("2017", "07", "11", "wannacry", "11"),
+    FlowFile("2017", "07", "13", "wannacry", "12"),
+    FlowFile("2017", "07", "11", "wannacry", "13"),
+    FlowFile("2017", "07", "13", "wannacry", "14"),
+    FlowFile("2017", "07", "13", "wannacry", "15"),
+
+
     ]
 
 needed_features = ['Dur', 'SrcDur', 'DstDur', 'sTos', 'dTos',  'dTtl',
@@ -232,10 +270,13 @@ print("Reading MALICIOUS...")
 for m in malicious_list:
     # print(f"Reading file {m.filename}")
     m_file = f"malicious/{m.name}/{m.filename}"
+
+    # Memory safe reading
+    # for chunk in pd.read_csv(m_file, chunksize=1000000, dtype={'Sport':'object', 'Dport':'object'}):
     m_dset = pd.read_csv(m_file, dtype={'Sport':'object', 'Dport':'object'})
     m_dset = preprocess(m_dset, filter_malicious, m, test_size)
     all_dsets = pd.concat([all_dsets, m_dset])
-    
+
 print("Reading NORMAL...")
 for n in normal_list:
     # print(f"Reading file {n.filename}")
@@ -255,31 +296,40 @@ all_dsets['Date'] = pd.to_datetime(all_dsets['Date'])
 
 # -------------------- TRAINING --------------------
 
-with open("performances/tmp.txt", "a") as f:
-    f.write("START\n\n")
+# with open("performances/tmp.txt", "a") as f:
+#     f.write("START\n\n")
 
-botnet = "single"
+botnet = "all"
 all_results = []
 for i in range(1,6):
     print(f"Test {i}")
-    results_standard = ensemble_cl(all_dsets, test_size, botnet)
+    results_standard = prova(all_dsets, test_size, botnet)
     print_metrics(results_standard)
     all_results.append(results_standard)
-    exit()
 
+dfs = []
 mean_results = {}
 if botnet == "all":
     metrics = ["Precision", "F1", "TPR", "TNR"]
 else:
     metrics = ['TPR']
 
-for m in metrics:
-    values = [run[m] for run in all_results]
-    mean_results[m] = np.mean(values, axis=0).tolist()
+for res in all_results:
+    tmp_df = pd.DataFrame(res)
+    for m in metrics:
+        tmp_df[m] = pd.to_numeric(tmp_df[m], errors='coerce')
+    dfs.append(tmp_df)
+combined_results = pd.concat(dfs)
+combined_results['Date'] = pd.to_datetime(combined_results['Date'], format='%m-%Y')
+
+    # values = [run[m] for run in all_results]
+    # mean_results[m] = np.mean(values, axis=0).tolist()
+mean_results = combined_results.groupby('Date').mean().reset_index()
+mean_results = mean_results.sort_values('Date')
 
 for key, value in mean_results.items():
-    floored_list = [decimal_floor(n, 3) for n in value]
-    mean_results[key] = floored_list
+    if key != "Date":
+        mean_results[key] = [decimal_floor(n, 3) for n in value]
 
 print(f"Valori medi: {mean_results}")
 
@@ -288,26 +338,43 @@ pendleblue="#1F8FFF"
 pendlegreen="#32c63c"
 pendlered="#B11616"
 fig, ax1 = plt.subplots(figsize=(10, 5))
+# for m in metrics:
+#     df_plot = mean_results.dropna(subset=[m])
+metrics_info = [
+    ('Precision', pendlegreen),
+    ('F1', pendleblue),
+    ('TNR', 'cyan'),
+    ('TPR', pendlered)
+]
 
-if botnet == "all":
-    ax1.plot(mean_results['Precision'], marker='o', color=pendlegreen)
-    ax1.plot(mean_results['F1'], marker='o', color=pendleblue)
-    ax1.plot(mean_results['TNR'], marker='o', color='cyan')
-    ax1.plot(mean_results['TPR'], marker='o', color=pendlered)
-    ax1.legend(['Precision', 'F1', 'TNR', 'TPR'])
+for label, color in metrics_info:
+    mask = mean_results[label].notnull()
+    ax1.plot(mean_results.index[mask], mean_results.loc[mask, label], marker='o', color=color, label=label)
+    ax1.legend()
     ax1.set_ylabel('Performance')
     ax1.grid(axis = 'y')
     ax1.set_xticks(range(len(results_standard['Date'])))
     ax1.set_xticklabels(results_standard['Date'])
-    ax1.set_title("ENSEMBLE+CL-ER+MU")
-else:
-    ax1.plot(mean_results['TPR'], marker='o', color=pendlered)
-    ax1.legend(['TPR'])
-    ax1.set_ylabel('Performance')
-    ax1.grid(axis = 'y')
-    ax1.set_xticks(range(len(results_standard['Date'])))
-    ax1.set_xticklabels(results_standard['Date'])
-    ax1.set_title("ENSEMBLE+CL-ER+MU - DRIDEX")
+    ax1.set_title("OTHERS")
+# if botnet == "all":
+#     ax1.plot(mean_results['Precision'], marker='o', color=pendlegreen)
+#     ax1.plot(mean_results['F1'], marker='o', color=pendleblue)
+#     ax1.plot(mean_results['TNR'], marker='o', color='cyan')
+#     ax1.plot(mean_results['TPR'], marker='o', color=pendlered)
+#     ax1.legend(['Precision', 'F1', 'TNR', 'TPR'])
+#     ax1.set_ylabel('Performance')
+#     ax1.grid(axis = 'y')
+#     ax1.set_xticks(range(len(results_standard['Date'])))
+#     ax1.set_xticklabels(results_standard['Date'])
+#     ax1.set_title("OTHERS")
+# else:
+#     ax1.plot(mean_results['TPR'], marker='o', color=pendlered)
+#     ax1.legend(['TPR'])
+#     ax1.set_ylabel('Performance')
+#     ax1.grid(axis = 'y')
+#     ax1.set_xticks(range(len(results_standard['Date'])))
+#     ax1.set_xticklabels(results_standard['Date'])
+#     ax1.set_title("ENSEMBLE+CL-ER+MU - DRIDEX")
 
 # ax2.plot(results_downsample['Precision'], marker='o', color=pendleyellow)
 # ax2.plot(results_downsample['Recall'], marker='o', color='red')
