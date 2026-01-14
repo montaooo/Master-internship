@@ -232,13 +232,13 @@ def update_buffer(buffer_X, buffer_y, new_X, new_y, size: int):
     
     return X_combined[indexes], y_combined[indexes]
 
-def prova(dset: pd.DataFrame, test_size, botnet: str):
+def cl_mu(dset: pd.DataFrame, test_size, botnet: str):
     results = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
     t = pd.to_datetime(dset['Date'])
     y = dset['Label'].values
     X = dset.drop(columns=['Date', 'Label']).values
     fixed_start_date = pd.to_datetime("2016-09-01")
-    train_size = 2
+    train_size = 8
     ensemble_models = []
     weights = []
 
@@ -261,7 +261,7 @@ def prova(dset: pd.DataFrame, test_size, botnet: str):
     weights.append(1)
     pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test_past, weights)
     t_train = pd.Series(t_train)
-    results['Date'].append(f"{t_train.iloc[-1].month}-{t_train.iloc[-1].year}")
+    results['Date'].append(f"{t_train.max().month}-{t_train.max().year}")
     calculate_metrics(y_test_past, pred, results, botnet)
 
     max_probs = np.max(avg_probs, axis=1)
@@ -280,10 +280,8 @@ def prova(dset: pd.DataFrame, test_size, botnet: str):
     # -------------------- CONTINUAL LEARNING --------------------
     print("Start Testing")
 
-    
     starttime = time.time()
-    f = open("performances/tmp.txt", "a")
-    print(f"Start time: {datetime.datetime.now().time()}", file=f)
+    print(f"Start time: {datetime.datetime.now().time()}")
 
     for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
         t_test: pd.Series
@@ -358,15 +356,172 @@ def prova(dset: pd.DataFrame, test_size, botnet: str):
         weights.append(1)
 
         results['Date'].append(f"{t_test.iloc[0].month}-{t_test.iloc[0].year}")
-        # pred = clf.predict(X_test)
         calculate_metrics(y_test, pred, results, botnet)
 
+        print(len(np.where(y_new_ensemble == 0)[0]), len(np.where(y_new_ensemble == 1)[0]))
         ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
-        # print(f"Numero modelli: {len(ensemble_models)}")
-        # print(f"Numero di pesi: {len(weights)}")
+        print(f"Numero modelli: {len(ensemble_models)}")
+
+    endtime = time.time() - starttime
+    print(f"Time taken: {endtime}")
     print(results)
     return results
 
+def cl(dset: pd.DataFrame, test_size, botnet: str):
+    results = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
+    t = pd.to_datetime(dset['Date'])
+    y = dset['Label'].values
+    X = dset.drop(columns=['Date', 'Label']).values
+    fixed_start_date = pd.to_datetime("2016-09-01")
+    train_size = 8
+    ensemble_models = []
+    weights = []
+
+    splits = temporal.time_aware_train_test_split(X, y, t, train_size=train_size, test_size=1, granularity="month", start_date=fixed_start_date)
+    X_train, X_tests, y_train, y_tests, t_train, t_tests = splits
+    X_tests, y_tests, t_tests = clean_dsets(X_tests, y_tests, t_tests)
+
+    if botnet == "all":
+        X_train, y_train, t_train = spatial.downsample_set(X_train, y_train, t_train.values, min_pos_rate=1/2)
+    else:
+        raise ValueError(f"botnet name '{botnet}' invalid")
+
+    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+
+    print("Old data training...")
+    X_train_past, X_test_past, y_train_past, y_test_past = train_test_split(X_train, y_train, test_size=test_size, random_state=42, stratify=y_train)
+
+    clf.fit(X_train_past, y_train_past)
+    ensemble_models.append(clf)
+    weights.append(1)
+    pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test_past, weights)
+    t_train = pd.Series(t_train)
+    results['Date'].append(f"{t_train.max().month}-{t_train.max().year}")
+    calculate_metrics(y_test_past, pred, results, botnet)
+
+    max_probs = np.max(avg_probs, axis=1)
+    idx_neg_full = np.where(y_test_past == 0)[0]
+    idx_pos_full = np.where(y_test_past == 1)[0]
+    k_neg = len(idx_neg_full) // 2
+    k_pos = len(idx_pos_full) // 2
+    neg_indexes = idx_neg_full[np.argsort(max_probs[idx_neg_full])[:k_neg]]
+    pos_indexes = idx_pos_full[np.argsort(max_probs[idx_pos_full])[:k_pos]]
+
+    buffer_X_neg = X_test_past[neg_indexes]
+    buffer_y_neg = y_test_past[neg_indexes]
+    buffer_X_pos = X_test_past[pos_indexes]
+    buffer_y_pos = y_test_past[pos_indexes]
+    
+    # -------------------- CONTINUAL LEARNING --------------------
+    print("Start Testing")
+    
+    starttime = time.time()
+    print(f"Start time: {datetime.datetime.now().time()}")
+
+    for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
+        t_test: pd.Series
+        print(f"Cycle {i}")
+
+        pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test, weights)
+        max_probs = np.max(avg_probs, axis=1)
+        K = y_test.shape[0] // 2
+        indexes = np.argsort(max_probs)[:K]
+        
+        X_new_ensemble = X_test[indexes]
+        y_new_ensemble = y_test[indexes]
+
+        # Controllo se nel periodo corrente sono presenti entrambe le classi (0,1)
+        classes_found = np.unique(y_new_ensemble)
+        if len(classes_found) == 1:
+            missing_class = 1 if 0 in classes_found else 0
+            if missing_class == 1:
+                X_new_ensemble = np.vstack([X_new_ensemble, buffer_X_pos])
+                y_new_ensemble = np.concatenate([y_new_ensemble, buffer_y_pos])
+            else:
+                X_new_ensemble = np.vstack([X_new_ensemble, buffer_X_neg])
+                y_new_ensemble = np.concatenate([y_new_ensemble, buffer_y_neg])
+
+        # Controllo il numero di dati delle due classi
+        
+        # Aggiornamento del buffer coi dati passati
+        idx_neg_new = np.where(y_test == 0)[0]
+        idx_pos_new = np.where(y_test == 1)[0]
+
+        if len(idx_neg_new) > 0:
+            k = len(idx_neg_new) // 2
+            n_idx = idx_neg_new[np.argsort(max_probs[idx_neg_new])[:k]]
+            buffer_X_neg, buffer_y_neg = X_test[n_idx], y_test[n_idx]
+        if len(idx_pos_new) > 0:
+            k = len(idx_pos_new) // 2
+            n_idx = idx_pos_new[np.argsort(max_probs[idx_pos_new])[:k]]
+            buffer_X_pos, buffer_y_pos = X_test[n_idx], y_test[n_idx]
+
+        weights = calculate_weights(y_test, all_probs, botnet)
+        weights.append(1)
+
+        results['Date'].append(f"{t_test.iloc[0].month}-{t_test.iloc[0].year}")
+        calculate_metrics(y_test, pred, results, botnet)
+
+        print(len(np.where(y_new_ensemble == 0)[0]), len(np.where(y_new_ensemble == 1)[0]))
+        ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        print(f"Numero modelli: {len(ensemble_models)}")
+
+    endtime = time.time() - starttime
+    print(f"Time taken: {endtime}")
+    print(results)
+    return results
+
+def concept_drift(dset: pd.DataFrame, test_size, botnet: str):
+    results = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
+    t = pd.to_datetime(dset['Date'])
+    y = dset['Label'].values
+    X = dset.drop(columns=['Date', 'Label']).values
+    fixed_start_date = pd.to_datetime("2016-09-01")
+    train_size = 8
+
+    splits = temporal.time_aware_train_test_split(X, y, t, train_size=train_size, test_size=1, granularity="month", start_date=fixed_start_date)
+    X_train, X_tests, y_train, y_tests, t_train, t_tests = splits
+    X_tests, y_tests, t_tests = clean_dsets(X_tests, y_tests, t_tests)
+
+    if botnet == "all":
+        X_train, y_train, t_train = spatial.downsample_set(X_train, y_train, t_train.values, min_pos_rate=1/2)
+    else:
+        raise ValueError(f"botnet name '{botnet}' invalid")
+
+    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+
+    print("Old data training...")
+    X_train_past, X_test_past, y_train_past, y_test_past = train_test_split(X_train, y_train, test_size=test_size, random_state=42, stratify=y_train)
+    print(len(np.where(y_train_past == 0)[0]), len(np.where(y_train_past == 1)[0]))
+    clf.fit(X_train_past, y_train_past)
+    
+    pred= clf.predict(X_test_past)
+    t_train = pd.Series(t_train)
+    results['Date'].append(f"{t_train.max().month}-{t_train.max().year}")
+    calculate_metrics(y_test_past, pred, results, botnet)
+    
+    # -------------------- CONTINUAL LEARNING --------------------
+    print("Start Testing")
+
+    starttime = time.time()
+    print(f"Start time: {datetime.datetime.now().time()}")
+
+    for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
+        t_test: pd.Series
+        print(f"Cycle {i}")
+        results['Date'].append(f"{t_test.iloc[0].month}-{t_test.iloc[0].year}")
+        pred = clf.predict(X_test)
+        calculate_metrics(y_test, pred, results, botnet)
+
+    endtime = time.time() - starttime
+    print(f"Time taken: {endtime}")
+    print(results)
+    X_columns = dset.drop(columns=['Date', 'Label']).columns
+    print(check_importances(clf, X_columns))
+    return results
+
+
+# ------------------------- OLD ------------------------
 def rf_cl(dset: pd.DataFrame, test_size, botnet: str):
     results = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
     t = pd.to_datetime(dset['Date'])
@@ -466,8 +621,6 @@ def ensemble_cl(dset: pd.DataFrame, test_size, botnet: str):
     weights.append(1)
     pred = clf.predict(X_test_past)
     calculate_metrics(y_test_past, pred, results, botnet)
-
-    
 
     # all_probs = clf.predict_proba(X_test_past)
     # max_probs = np.max(all_probs, axis=1)
