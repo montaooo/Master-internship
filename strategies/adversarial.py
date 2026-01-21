@@ -44,3 +44,25 @@ def dttl_dtos_poison(X, y: pd.DataFrame, X_columns: pd.Index, ratio=0.4):
     X_p[poison_indexes, dtos] = mean_dtos    
 
     return X_p
+
+def poison_features(X, y, X_columns: pd.Index, features: list, increments: list):
+    botnet_indexes = np.where(y == 1)[0]
+    feature_columns = [X_columns.get_loc(column) for column in features]
+    botnet_indexes = np.random.choice(botnet_indexes, int(len(botnet_indexes) * 0.5), replace=False)
+    
+    for c_index, i, f in zip(feature_columns, increments, features):
+        X[botnet_indexes, c_index] += i
+
+        if f == "Dur":
+            src_dur = X_columns.get_loc('SrcDur')
+            X[botnet_indexes, src_dur] += i
+            rate = X_columns.get_loc('Rate')
+            src_rate = X_columns.get_loc('SrcRate')
+            tot_pkts = X_columns.get_loc('TotPkts')
+            src_pkts = X_columns.get_loc('SrcPkts')
+            X[botnet_indexes, rate] = (X[botnet_indexes, tot_pkts]-1)/X[botnet_indexes, c_index]
+            X[botnet_indexes, src_rate] = (X[botnet_indexes, src_pkts]-1)/X[botnet_indexes, src_dur]
+            load = X_columns.get_loc('Load')
+            src_load = X_columns.get_loc('SrcLoad')
+            X[botnet_indexes, load] = X[botnet_indexes, load] * ((X[botnet_indexes, c_index] - i) / X[botnet_indexes, c_index])
+            X[botnet_indexes, src_load] = X[botnet_indexes, src_load] * ((X[botnet_indexes, src_dur] - i) / X[botnet_indexes, src_dur])

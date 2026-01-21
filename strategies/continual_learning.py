@@ -6,7 +6,7 @@ import numpy as np
 import datetime, time
 from math import floor, isnan
 
-from strategies.adversarial import poison_dset, dttl_dtos_poison
+from strategies.adversarial import poison_dset, dttl_dtos_poison, poison_features
 from tesseract import temporal, spatial
 
 def best_K_data(clf: RandomForestClassifier, X_test: pd.DataFrame, y_test: pd.DataFrame, botnet: str):
@@ -312,13 +312,17 @@ def cl_mu(dset: pd.DataFrame, test_size, botnet: str):
     starttime = time.time()
     print(f"Start time: {datetime.datetime.now().time()}")
 
+    # Adversarial data
+    features_to_increment = ["Dur"]
+    increments = [1]
+
     for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
         t_test: pd.Series
         print(f"Cycle {i}")
         unlearning = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
 
-        # Adversarial
-        X_test = dttl_dtos_poison(X_test, y_test, X_columns)
+        # Adversarial function
+        poison_features(X_test, y_test, X_columns, features_to_increment, increments)
 
 
         pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test, weights)
@@ -395,7 +399,7 @@ def cl_mu(dset: pd.DataFrame, test_size, botnet: str):
     endtime = time.time() - starttime
     print(f"Time taken: {endtime}")
     print(results)
-    check_importances_ensemble(ensemble_models, X_columns)
+    # check_importances_ensemble(ensemble_models, X_columns)
     return results
 
 def cl(dset: pd.DataFrame, test_size, botnet: str):
@@ -440,12 +444,16 @@ def cl(dset: pd.DataFrame, test_size, botnet: str):
     starttime = time.time()
     print(f"Start time: {datetime.datetime.now().time()}")
 
+    # Adversarial data
+    features_to_increment = ["Dur"]
+    increments = [1]
+
     for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
         t_test: pd.Series
         print(f"Cycle {i}")
 
-        # Adversarial
-        X_test = dttl_dtos_poison(X_test, y_test, X_columns)
+        # Adversarial function
+        poison_features(X_test, y_test, X_columns, features_to_increment, increments)
 
         pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test, weights)
         max_probs = np.max(avg_probs, axis=1)
@@ -486,7 +494,7 @@ def cl(dset: pd.DataFrame, test_size, botnet: str):
     endtime = time.time() - starttime
     print(f"Time taken: {endtime}")
     print(results)
-    check_importances_ensemble(ensemble_models, X_columns)
+    # check_importances_ensemble(ensemble_models, X_columns)
     return results
 
 def concept_drift(dset: pd.DataFrame, test_size, botnet: str):
@@ -523,20 +531,24 @@ def concept_drift(dset: pd.DataFrame, test_size, botnet: str):
     starttime = time.time()
     print(f"Start time: {datetime.datetime.now().time()}")
 
+    # Adversarial data
+    features_to_increment = ["Dur"]
+    increments = [1]
+    
     for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
         
         t_test: pd.Series
         print(f"Cycle {i}")
         results['Date'].append(f"{t_test.iloc[0].month}-{t_test.iloc[0].year}")
         
-        # Adversarial
-        X_test = dttl_dtos_poison(X_test, y_test, X_columns)
-        
+        # Adversarial function
+        poison_features(X_test, y_test, X_columns, features_to_increment, increments)
+
         pred = clf.predict(X_test)
         calculate_metrics(y_test, pred, results, botnet)
 
     endtime = time.time() - starttime
     print(f"Time taken: {endtime}")
     print(results)
-    print(check_importances(clf, X_columns))
+    # print(check_importances(clf, X_columns))
     return results
