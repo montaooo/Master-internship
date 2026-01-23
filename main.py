@@ -325,15 +325,16 @@ for i in range(3):
     if i == 0:
         index = "no_retrain"
         print("CONCEPT DRIFT")
-        for i in range(1,6):
+        for i in range(1,5):
             print(f"Test {i}")
             results_standard = concept_drift(all_dsets, test_size, botnet)
             print_metrics(results_standard)
+
             all_results.append(results_standard)
     elif i == 1:
         index = "cl"
         print("CONTINUAL LEARNING")
-        for i in range(1,3):
+        for i in range(1,5):
             print(f"Test {i}")
             results_standard = cl(all_dsets, test_size, botnet)
             print_metrics(results_standard)
@@ -341,7 +342,7 @@ for i in range(3):
     else:
         index = "cl_mu"
         print("CONTINUAL LEARNING + MACHINE UNLEARNING")
-        for i in range(1,3):
+        for i in range(1,5):
             print(f"Test {i}")
             results_standard = cl_mu(all_dsets, test_size, botnet)
             print_metrics(results_standard)

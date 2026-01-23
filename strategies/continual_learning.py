@@ -1,7 +1,10 @@
 import pandas as pd
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+# from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import datetime, time
 from math import floor, isnan
@@ -290,12 +293,16 @@ def cl_mu(dset: pd.DataFrame, test_size, botnet: str):
 
     # Sampling 1:1
     X_train, y_train, t_train = spatial.downsample_set(X_train, y_train, t_train.values, min_pos_rate=1/2)
-    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
-
+    # clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+    # clf = MLPClassifier(hidden_layer_sizes=(25, 25), batch_size=10, alpha=0.1, max_iter=250, random_state=42)
+    clf = LogisticRegression(C=0.01, class_weight={0: 5, 1: 1}, random_state=42)
+    scaler = StandardScaler()
     # -------------------------------- TRAINING --------------------------------
     print("Old data training...")
     X_train_past, X_test_past, y_train_past, y_test_past = train_test_split(X_train, y_train, test_size=test_size, random_state=42, stratify=y_train)
 
+    X_train_past = scaler.fit_transform(X_train_past)
+    X_test_past = scaler.transform(X_test_past)
     clf.fit(X_train_past, y_train_past)
     ensemble_models.append(clf)
     weights.append(1)
@@ -319,10 +326,11 @@ def cl_mu(dset: pd.DataFrame, test_size, botnet: str):
     for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
         t_test: pd.Series
         print(f"Cycle {i}")
+        X_test = scaler.transform(X_test)   
         unlearning = {"Precision": [], "F1": [], "TNR": [], "TPR": [], "Date": []}
 
         # Adversarial function
-        poison_features(X_test, y_test, X_columns, features_to_increment, increments)
+        # poison_features(X_test, y_test, X_columns, features_to_increment, increments)
 
 
         pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test, weights)
@@ -393,7 +401,9 @@ def cl_mu(dset: pd.DataFrame, test_size, botnet: str):
         calculate_metrics(y_test, pred, results, botnet)
 
         # print(len(np.where(y_new_ensemble == 0)[0]), len(np.where(y_new_ensemble == 1)[0]))
-        ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        # ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        # ensemble_models.append(MLPClassifier(hidden_layer_sizes=(25, 25), batch_size=10, max_iter=250, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        ensemble_models.append(LogisticRegression(C=0.01, class_weight={0: 5, 1: 1}, random_state=42).fit(X_new_ensemble, y_new_ensemble))
         print(f"Numero modelli: {len(ensemble_models)}")
 
     endtime = time.time() - starttime
@@ -421,12 +431,16 @@ def cl(dset: pd.DataFrame, test_size, botnet: str):
 
     # Sampling 1:1
     X_train, y_train, t_train = spatial.downsample_set(X_train, y_train, t_train.values, min_pos_rate=1/2)
-    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
-
+    # clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+    # clf = MLPClassifier(hidden_layer_sizes=(25, 25), batch_size=10, alpha=0.1, max_iter=250, random_state=42)
+    clf = LogisticRegression(C=0.01, class_weight={0: 5, 1: 1}, random_state=42)
+    scaler = StandardScaler()
     # -------------------------------- TRAINING --------------------------------
     print("Old data training...")
     X_train_past, X_test_past, y_train_past, y_test_past = train_test_split(X_train, y_train, test_size=test_size, random_state=42, stratify=y_train)
 
+    X_train_past = scaler.fit_transform(X_train_past)
+    X_test_past = scaler.transform(X_test_past)
     clf.fit(X_train_past, y_train_past)
     ensemble_models.append(clf)
     weights.append(1)
@@ -451,9 +465,9 @@ def cl(dset: pd.DataFrame, test_size, botnet: str):
     for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
         t_test: pd.Series
         print(f"Cycle {i}")
-
+        X_test = scaler.transform(X_test)
         # Adversarial function
-        poison_features(X_test, y_test, X_columns, features_to_increment, increments)
+        # poison_features(X_test, y_test, X_columns, features_to_increment, increments)
 
         pred, all_probs, avg_probs = ensemble_predict_weighted(ensemble_models, X_test, weights)
         max_probs = np.max(avg_probs, axis=1)
@@ -488,7 +502,9 @@ def cl(dset: pd.DataFrame, test_size, botnet: str):
         calculate_metrics(y_test, pred, results, botnet)
 
         # print(len(np.where(y_new_ensemble == 0)[0]), len(np.where(y_new_ensemble == 1)[0]))
-        ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        # ensemble_models.append(RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        # ensemble_models.append(MLPClassifier(hidden_layer_sizes=(25, 25), batch_size=10, max_iter=250, random_state=42).fit(X_new_ensemble, y_new_ensemble))
+        ensemble_models.append(LogisticRegression(C=0.01, class_weight={0: 5, 1: 1}, random_state=42).fit(X_new_ensemble, y_new_ensemble))
         print(f"Numero modelli: {len(ensemble_models)}")
 
     endtime = time.time() - starttime
@@ -513,14 +529,22 @@ def concept_drift(dset: pd.DataFrame, test_size, botnet: str):
 
     # Sampling 1:1
     X_train, y_train, t_train = spatial.downsample_set(X_train, y_train, t_train.values, min_pos_rate=1/2)
-    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
-
+    # clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+    # clf = MLPClassifier(hidden_layer_sizes=(25,25), batch_size=10, max_iter=250, alpha=0.1, random_state=42)
+    scaler = StandardScaler()
+    clf = LogisticRegression(C=0.01, class_weight={0: 5, 1: 1}, random_state=42)
     # -------------------------------- TRAINING --------------------------------
     print("Old data training...")
     X_train_past, X_test_past, y_train_past, y_test_past = train_test_split(X_train, y_train, test_size=test_size, random_state=42, stratify=y_train)
+    X_train_past = scaler.fit_transform(X_train_past)
+    X_test_past = scaler.transform(X_test_past)
     
     clf.fit(X_train_past, y_train_past)
-    pred= clf.predict(X_test_past)
+    
+    pred = clf.predict(X_test_past)
+    # scores = clf.decision_function(X_test_past)
+    # threshold = 0.1
+    # pred = (scores > threshold).astype(int)
     t_train = pd.Series(t_train)
     results['Date'].append(f"{t_train.max().month}-{t_train.max().year}")
     calculate_metrics(y_test_past, pred, results, botnet)
@@ -536,13 +560,13 @@ def concept_drift(dset: pd.DataFrame, test_size, botnet: str):
     increments = [1]
     
     for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
-        
+        X_test = scaler.transform(X_test)
         t_test: pd.Series
         print(f"Cycle {i}")
         results['Date'].append(f"{t_test.iloc[0].month}-{t_test.iloc[0].year}")
         
         # Adversarial function
-        poison_features(X_test, y_test, X_columns, features_to_increment, increments)
+        # poison_features(X_test, y_test, X_columns, features_to_increment, increments)
 
         pred = clf.predict(X_test)
         calculate_metrics(y_test, pred, results, botnet)
@@ -551,4 +575,5 @@ def concept_drift(dset: pd.DataFrame, test_size, botnet: str):
     print(f"Time taken: {endtime}")
     print(results)
     # print(check_importances(clf, X_columns))
+    
     return results
