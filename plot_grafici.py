@@ -147,25 +147,25 @@ plt.tight_layout()
 plt.show()
 '''
 
-with open("dsets.pickle", "rb") as f:
-    dset = pickle.load(f)
+# with open("dsets.pickle", "rb") as f:
+#     dset = pickle.load(f)
 
-t = pd.to_datetime(dset['Date'])
-y = dset['Label'].values
-X = dset.drop(columns=['Date', 'Label']).values
-fixed_start_date = pd.to_datetime("2016-09-01")
-train_size = 2
+# t = pd.to_datetime(dset['Date'])
+# y = dset['Label'].values
+# X = dset.drop(columns=['Date', 'Label']).values
+# fixed_start_date = pd.to_datetime("2016-09-01")
+# train_size = 2
 
-splits = temporal.time_aware_train_test_split(X, y, t, train_size=train_size, test_size=1, granularity="month", start_date=fixed_start_date)
+# splits = temporal.time_aware_train_test_split(X, y, t, train_size=train_size, test_size=1, granularity="month", start_date=fixed_start_date)
 
-X_train, X_tests, y_train, y_tests, t_train, t_tests = splits
-X_tests, y_tests, t_tests = clean_dsets(X_tests, y_tests, t_tests)
-X_train, y_train, t_train = spatial.downsample_set(X_train, y_train, t_train.values, min_pos_rate=1/2)
+# X_train, X_tests, y_train, y_tests, t_train, t_tests = splits
+# X_tests, y_tests, t_tests = clean_dsets(X_tests, y_tests, t_tests)
+# X_train, y_train, t_train = spatial.downsample_set(X_train, y_train, t_train.values, min_pos_rate=1/2)
 
-print(len(np.where(y_train == 0)[0]), len(np.where(y_train == 1)[0]))
+# print(len(np.where(y_train == 0)[0]), len(np.where(y_train == 1)[0]))
 
-for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
+# for i, (X_test, y_test, t_test) in enumerate(zip(X_tests, y_tests, t_tests), 1):
 
-    K = y_test.shape[0] // 2
-    y_test = y_test[:K]
-    print(len(np.where(y_test == 0)[0]), len(np.where(y_test == 1)[0]))
+#     K = y_test.shape[0] // 2
+#     y_test = y_test[:K]
+#     print(len(np.where(y_test == 0)[0]), len(np.where(y_test == 1)[0]))
